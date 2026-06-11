@@ -38,7 +38,7 @@ exports.createTask = (req, res, next) => {
             errors: err.array()
         })
     }
-    const imageUrl = req.file.path;
+    const imageUrl = req.file ? req.file.originalname : null;
     const postTask = new taskSchema({
         title: req.body.title,
         userId: req.body.userId,
@@ -77,7 +77,7 @@ exports.editTask = (req, res, next) => {
     const userId = req.body.userId;
     let image = req.body.image
     if (req.file) {
-        image = req.file.path
+        image = req.file.originalname
     }
     if (!image) {
         let error = new Error("No Image Uploaded")
@@ -193,6 +193,8 @@ exports.completeTask = (req , res , next) => {
     })
 }
 const clearImage = filePath => {
+    // Skip file deletion on Vercel (read-only filesystem / memory storage)
+    if (!filePath || process.env.VERCEL) return;
     filePath = path.join(__dirname, '..', filePath);
-    fs.unlink(filePath, err => console.log(err))
+    fs.unlink(filePath, err => { if (err) console.log(err); });
 }
