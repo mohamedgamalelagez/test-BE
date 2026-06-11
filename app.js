@@ -1,20 +1,19 @@
 const express = require('express');
+const tasksRoute = require('./routes/admin');
+const authRoute = require('./routes/auth');
+const app = express();
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const path = require('path');
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./swagger.json');
-
-// Load .env from both possible locations
 require('dotenv').config();
 require('dotenv').config({ path: path.join(__dirname, 'util', '.env') });
 
-const tasksRoute = require('./routes/admin');
-const authRoute = require('./routes/auth');
+const mongoose = require('mongoose');
+const port = process.env.PORT || 8080;
 
-const app = express();
-
-// Use memoryStorage — Vercel has a read-only filesystem
+// ── Multer (memoryStorage works on both Render & Vercel) ──────────────────────
 const fileStorage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -29,6 +28,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
+// ── Middleware ────────────────────────────────────────────────────────────────
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.use(bodyParser.json());
 app.use(multer({ storage: fileStorage, fileFilter: fileFilter }).single('image'));
@@ -44,51 +44,28 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/tasks', tasksRoute);
 app.use('/auth', authRoute);
 
-// Global error handler
+// ── Global Error Handler ──────────────────────────────────────────────────────
 app.use((error, req, res, next) => {
-  console.error('Error:', error);
+  console.error('Error:', error.message);
   const status = error.statusCode || 500;
-  const message = error.message;
-  res.status(status).json({ message: message });
+  res.status(status).json({ message: error.message });
 });
 
-// ── DB Connection (cached for serverless) ────────────────────────────────────
-const mongoose = require('mongoose');
-let isConnected = false;
-
-const connectDB = async () => {
-  if (isConnected) return;
-  if (!process.env.MONGO_URL) {
-    throw new Error('MONGO_URL environment variable is not set!');
-  }
-  await mongoose.connect(process.env.MONGO_URL);
-  isConnected = true;
-  console.log('DB Connected!!');
-};
-
-// ── Export for Vercel serverless ─────────────────────────────────────────────
-module.exports = async (req, res) => {
-  try {
-    await connectDB();
-  } catch (err) {
+// ── DB Connection & Server Start ──────────────────────────────────────────────
+mongoose
+  .connect(process.env.MONGO_URL)
+  .then(() => {
+    console.log('DB Connected!!');
+    app.listen(port, () => console.log(`Server running on port ${port}`));
+  })
+  .catch(err => {
     console.error('DB connection failed:', err.message);
-    return res.status(500).json({ message: 'Database connection failed: ' + err.message });
-  }
-  return app(req, res);
-};
+    process.exit(1);
+  });
 
-// ── Local development only ────────────────────────────────────────────────────
-if (require.main === module) {
-  const port = process.env.PORT || 8080;
-  connectDB()
-    .then(() => {
-      app.listen(port, () => console.log(`Server running on port ${port}`));
-    })
-    .catch(err => {
-      console.error('Failed to start server:', err);
-      process.exit(1);
-    });
-}
+// ── Export for Vercel (optional) ──────────────────────────────────────────────
+module.exports = app;
